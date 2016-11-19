@@ -403,7 +403,6 @@ load (const char *file_name, void (**eip) (void), void **esp)
   if (file == NULL) 
     {
       printf ("load: %s: open failed\n", file_name);
-//      printf ("@@%s@@", argv[0]);
       goto done; 
     }
 
@@ -563,6 +562,12 @@ validate_segment (const struct Elf32_Phdr *phdr, struct file *file)
 
    Return true if successful, false if a memory allocation error
    or disk read error occurs. */
+
+/* TODO Ingyo:
+   It does not have to load all code or data at once, which is 
+   lazy loading.
+*/
+
 static bool
 load_segment (struct file *file, off_t ofs, uint8_t *upage,
               uint32_t read_bytes, uint32_t zero_bytes, bool writable) 

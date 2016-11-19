@@ -121,6 +121,16 @@ kill (struct intr_frame *f)
    can find more information about both of these in the
    description of "Interrupt 14--Page Fault Exception (#PF)" in
    [IA32-v3a] section 5.15 "Exception and Interrupt Reference". */
+
+/* TODO Ingyo:
+   If a page fault occurs, the handler has to allocate physical memory
+   to faulted page. To do so, we need to read data from file or swap 
+   disk. Also, we need to interact with supplement page table.
+
+   Then, the handler makes the process return to the point where the
+   fault occured(See Q&A about this.). 
+*/
+
 static void
 page_fault (struct intr_frame *f) 
 {
