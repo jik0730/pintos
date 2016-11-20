@@ -1,10 +1,20 @@
 #include "vm/frame.h"
-#include "thread/malloc.h"
-#include "thread/palloc.h"
+#include "threads/malloc.h"
+#include "threads/palloc.h"
 #include <debug.h>
 #include "userprog/pagedir.h"
+#include <stdio.h>
 
-void init_fte (const void* upage_addr);
+/* TODO List
+   1. Deallocating frame table entries. (where?)
+   2. Adding functionality of swapping.
+   3. Page aligned????? -> ASSERT...
+*/
+
+struct fte* init_fte (const void* upage_addr, const void* kpage_addr);
+struct fte* find_fte (const void* upage_addr);
+void remove_fte (const void* upage_addr);
+struct fte* find_victim_fte (void);
 
 // Ingyo: Globally declared frame table.
 struct list frame_table;
@@ -20,6 +30,8 @@ frame_init (void)
 void
 add_fte (const void* upage_addr)
 {
+  ASSERT (upage_addr % 4096 == 0);
+
   void* kpage_addr = palloc_get_page (PAL_USER);
   // TODO: Implement swapping, otherwise kernel panic.
   ASSERT (kpage_addr != NULL);
@@ -32,10 +44,21 @@ add_fte (const void* upage_addr)
   }
 }
 
+// Ingyo: Overloaded add_fte for testing.
+void
+add_fte_test (const void* upage_addr, const void* kpage_addr)
+{
+  ASSERT (upage_addr % 4096 == 0);
+
+  struct fte* fte = init_fte (upage_addr, kpage_addr);
+}
+
 // Ingyo: Remove frame table entry from frame table with upage_addr.
 void
 remove_fte (const void* upage_addr)
 {
+  ASSERT (upage_addr % 4096 == 0);
+
   struct fte* fte = find_fte (upage_addr);
   ASSERT (fte != NULL);
 
@@ -108,6 +131,8 @@ find_victim_fte (void)
 struct fte*
 init_fte (const void* upage_addr, const void* kpage_addr)
 {
+  ASSERT (upage_addr % 4096 == 0);
+
   struct fte* fte = malloc (sizeof(struct fte));
   fte->upage_addr = upage_addr;
   fte->kpage_addr = kpage_addr;
@@ -122,6 +147,8 @@ init_fte (const void* upage_addr, const void* kpage_addr)
 struct fte*
 find_fte (const void* upage_addr)
 {
+  ASSERT (upage_addr % 4096 == 0);
+
   struct thread* cur = thread_current ();
   struct list_elem* e;
 

@@ -243,11 +243,9 @@ process_wait (tid_t child_tid UNUSED)
     process_remove (p);
     return status;
   }
-
+  // Ingyo: We may be able to remove process here.
   process_remove (get_child_process (child_tid));
   return -1;
-
-// Ingyo: We may be able to remove process here.
 }
 
 /* Free the current process's resources. */
@@ -605,6 +603,9 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
           return false; 
         }
 
+      // TODO Ingyo: Test frame.h
+      add_fte_test (upage, kpage);
+
       /* Advance. */
       read_bytes -= page_read_bytes;
       zero_bytes -= page_zero_bytes;
@@ -630,6 +631,8 @@ setup_stack (void **esp, int argc, char **argv)
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
       *esp = PHYS_BASE;
       if (success) {
+        // TODO Ingyo: Test frame.h
+        add_fte_test (((uint8_t *) PHYS_BASE) - PGSIZE, kpage);
         // Ingyo: Push argv data to stack.
         int total_len = 0;
         char* argv_addr[argc];
