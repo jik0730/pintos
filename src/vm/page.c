@@ -18,7 +18,7 @@ spage_init (struct hash* hash)
 bool
 add_spte (struct hash* hash)
 {
-
+  return true;
 }
 
 /* Ingyo: Remove spte from the spage_table. */
