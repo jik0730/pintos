@@ -11,66 +11,66 @@
    3. Page aligned????? -> ASSERT...
 */
 
-struct fte* init_fte (const void* upage_addr, const void* kpage_addr);
-struct fte* find_fte (const void* upage_addr);
-void remove_fte (const void* upage_addr);
+struct fte* init_fte (const void* upage, const void* kpage);
+struct fte* find_fte (const void* upage);
 struct fte* find_victim_fte (void);
 
-// Ingyo: Globally declared frame table.
 struct list frame_table;
 
-// Ingyo: Init frame.h
+/* Ingyo: Init frame.h */
 void
 frame_init (void)
 {
   list_init (&frame_table);
 }
 
-// Ingyo: Add frame table entry to frame table with upage_addr.
-void
-add_fte (const void* upage_addr)
+/* Ingyo: Add frame table entry to frame table with upage. */
+struct fte*
+add_fte (const void* upage, enum palloc_flags flag)
 {
-  ASSERT (upage_addr % 4096 == 0);
+  ASSERT ((int) upage % 4096 == 0);
 
-  void* kpage_addr = palloc_get_page (PAL_USER);
+  void* kpage = palloc_get_page (flag);
   // TODO: Implement swapping, otherwise kernel panic.
-  ASSERT (kpage_addr != NULL);
+  ASSERT (kpage != NULL);
 
   struct fte* fte;
-  if (kpage_addr != NULL) {
-    fte = init_fte (upage_addr, kpage_addr);
+  if (kpage != NULL) {
+    fte = init_fte (upage, kpage);
+    return fte;
   } else {
     // TODO: Swapping and find victim fte.
   }
+  return NULL;
 }
 
-// Ingyo: Overloaded add_fte for testing.
+/* Ingyo: Overloaded add_fte for testing. */
 void
-add_fte_test (const void* upage_addr, const void* kpage_addr)
+add_fte_test (const void* upage, const void* kpage)
 {
-  ASSERT (upage_addr % 4096 == 0);
+  ASSERT ((int) upage % 4096 == 0);
 
-  struct fte* fte = init_fte (upage_addr, kpage_addr);
+  struct fte* fte = init_fte (upage, kpage);
 }
 
-// Ingyo: Remove frame table entry from frame table with upage_addr.
+/* Ingyo: Remove frame table entry from frame table with upage. */
 void
-remove_fte (const void* upage_addr)
+remove_fte (const void* upage)
 {
-  ASSERT (upage_addr % 4096 == 0);
+  ASSERT ((int) upage % 4096 == 0);
 
-  struct fte* fte = find_fte (upage_addr);
+  struct fte* fte = find_fte (upage);
   ASSERT (fte != NULL);
 
-  palloc_free_page (fte->kpage_addr);
+  palloc_free_page (fte->kpage);
   // Clear pd entry. TODO: Do we really need this here??
-  pagedir_clear_page (fte->thread->pagedir, upage_addr);
+//  pagedir_clear_page (fte->thread->pagedir, upage);
 
   list_remove (&fte->elem);
   free (fte);
 }
 
-// Ingyo: Find victim fte by Enhanced Second Change Algorithm.
+/* Ingyo: Find victim fte by Enhanced Second Change Algorithm. */
 struct fte*
 find_victim_fte (void)
 {
@@ -80,7 +80,7 @@ find_victim_fte (void)
   {
     struct fte* fte = list_entry (e, struct fte, elem);
     uint32_t* pd = fte->thread->pagedir;
-    void* upage = fte->upage_addr;
+    void* upage = fte->upage;
     if (!pagedir_is_accessed (pd, upage)
         && !pagedir_is_dirty (pd, upage))
     {
@@ -97,7 +97,7 @@ find_victim_fte (void)
   {
     struct fte* fte = list_entry (e, struct fte, elem);
     uint32_t* pd = fte->thread->pagedir;
-    void* upage = fte->upage_addr;
+    void* upage = fte->upage;
     if (!pagedir_is_accessed (pd, upage)
         && pagedir_is_dirty (pd, upage))
       return fte;
@@ -108,7 +108,7 @@ find_victim_fte (void)
   {
     struct fte* fte = list_entry (e, struct fte, elem);
     uint32_t* pd = fte->thread->pagedir;
-    void* upage = fte->upage_addr;
+    void* upage = fte->upage;
     if (pagedir_is_accessed (pd, upage)
         && !pagedir_is_dirty (pd, upage))
       return fte;
@@ -119,7 +119,7 @@ find_victim_fte (void)
   {
     struct fte* fte = list_entry (e, struct fte, elem);
     uint32_t* pd = fte->thread->pagedir;
-    void* upage = fte->upage_addr;
+    void* upage = fte->upage;
     if (pagedir_is_accessed (pd, upage)
         && pagedir_is_dirty (pd, upage))
       return fte;
@@ -129,13 +129,13 @@ find_victim_fte (void)
 }
 
 struct fte*
-init_fte (const void* upage_addr, const void* kpage_addr)
+init_fte (const void* upage, const void* kpage)
 {
-  ASSERT (upage_addr % 4096 == 0);
+  ASSERT ((int) upage % 4096 == 0);
 
   struct fte* fte = malloc (sizeof(struct fte));
-  fte->upage_addr = upage_addr;
-  fte->kpage_addr = kpage_addr;
+  fte->upage = upage;
+  fte->kpage = kpage;
   fte->thread = thread_current ();
   // TODO: Do we need ordered list by somewhat??
   list_push_back (&frame_table, &fte->elem);
@@ -143,11 +143,11 @@ init_fte (const void* upage_addr, const void* kpage_addr)
   return fte;
 }
 
-// Ingyo: Find fte by upage_addr.
+/* Ingyo: Find fte by upage. */
 struct fte*
-find_fte (const void* upage_addr)
+find_fte (const void* upage)
 {
-  ASSERT (upage_addr % 4096 == 0);
+  ASSERT ((int) upage % 4096 == 0);
 
   struct thread* cur = thread_current ();
   struct list_elem* e;
@@ -156,7 +156,7 @@ find_fte (const void* upage_addr)
        e=list_next (e))
   {
     struct fte* fte = list_entry (e, struct fte, elem);
-    if (fte->thread == cur && fte->upage_addr == upage_addr)
+    if (fte->thread == cur && fte->upage == upage)
       return fte;
   }
 

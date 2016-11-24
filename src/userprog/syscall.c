@@ -225,7 +225,12 @@ write (int fd, const void* buffer, unsigned size)
 int
 read (int fd, void* buffer, unsigned size)
 {
-  check_ptr_valid (buffer);
+//  check_ptr_valid (buffer);
+  if (buffer >= PHYS_BASE || buffer<=USER_VADDR_BOTTOM)
+  {
+    exit (EXIT_FAILURE);
+  }
+
   if (fd == STDIN_FILENO)
   {
     uint8_t* temp_buffer = (uint8_t*) buffer;

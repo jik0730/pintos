@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include "threads/synch.h"
 #include "userprog/process.h"
+#include <hash.h>
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -83,23 +84,6 @@ typedef int pid_t; // Ingyo: for process id.
    only because they are mutually exclusive: only a thread in the
    ready state is on the run queue, whereas only a thread in the
    blocked state is on a semaphore wait list. */
-/* Ingyo: For USERPROG. */
-#ifdef USERPROG
-/*
-struct process
-  {
-    struct semaphore sema;
-    struct semaphore exec_sema;
-    pid_t parent_pid;
-    struct list children;
-    struct list_elem child_elem; // Ingyo: shared between processes.
-    int load_failed; // Ingyo: If load failed, 1, otherwise 0.
-    int wait_status;
-    int exit_status;
-    struct list file_list;
-  };
-*/
-#endif
 
 struct thread
   {
@@ -123,6 +107,7 @@ struct thread
     struct thread* parent;
     int wait_status;
     struct semaphore exec_sema;
+    struct hash spt;
 #endif
 
     /* Owned by thread.c. */

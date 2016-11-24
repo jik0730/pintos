@@ -6,6 +6,9 @@
 #include "threads/thread.h"
 #include "userprog/syscall.h"
 #include "threads/vaddr.h"
+#include "vm/page.h"
+
+#define USER_VADDR_BOTTOM 0x08048000
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -161,17 +164,48 @@ page_fault (struct intr_frame *f)
   user = (f->error_code & PF_U) != 0;
 
   // Ingyo: bad tests........
-  if (not_present || (is_kernel_vaddr (fault_addr) && user))
-    exit (-1);
+//  if (not_present || (is_kernel_vaddr (fault_addr) && user))
+//    exit (-1);
+
+  // TODO Ingyo: Things will be done here!!!!
+  bool success = false;
+  void* fault_page = pg_round_down (fault_addr);
+  struct spte* spte = get_spte (fault_page);
+
+//printf ("fault_addr: %X, fault_page: %X\n", fault_addr, fault_page);
+
+  if (!spte)
+  {
+    if (fault_page<PHYS_BASE && fault_page>=USER_VADDR_BOTTOM)
+    {
+      if (fault_addr > f->esp - 4096)
+        success = stack_growth (fault_page);
+      else exit (-1);
+    }
+    else
+    {
+      // TODO: Process Termination.
+      exit (-1);
+    }
+  }
+  else
+  {
+    success = load_page (spte);
+//printf ("load success??: %d\n", success);
+  }
 
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
      which fault_addr refers. */
-  printf ("Page fault at %p: %s error %s page in %s context.\n",
-          fault_addr,
-          not_present ? "not present" : "rights violation",
-          write ? "writing" : "reading",
-          user ? "user" : "kernel");
-  kill (f);
+  if (!success)
+  {
+//    exit (-1);
+    printf ("Page fault at %p: %s error %s page in %s context.\n",
+            fault_addr,
+            not_present ? "not present" : "rights violation",
+            write ? "writing" : "reading",
+            user ? "user" : "kernel");
+    kill (f);
+  }
 }
 

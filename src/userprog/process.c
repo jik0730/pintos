@@ -19,6 +19,7 @@
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
 #include <list.h>
+#include "vm/page.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -44,6 +45,7 @@ struct process* process_init (void)
   process->is_load = 1;
   process->exec_file = NULL;
   list_init (&process->files);
+  spage_init (&cur->spt);
   return process;
 }
 
@@ -405,7 +407,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
     }
 
   // TODO Ingyo: file_deny after opening file.
-  file_deny_write (file);
+//  file_deny_write (file);
   t->my_process->exec_file = file;
 
   /* Read and verify executable header. */
@@ -470,7 +472,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
                   read_bytes = 0;
                   zero_bytes = ROUND_UP (page_offset + phdr.p_memsz, PGSIZE);
                 }
-              if (!load_segment (file, file_page, (void *) mem_page,
+              if (!lazy_load_segment (file, file_page, (void *) mem_page,
                                  read_bytes, zero_bytes, writable))
                 goto done;
             }
@@ -491,7 +493,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
  done:
   /* We arrive here whether the load is successful or not. */
-  file_close (file);
+//  file_close (file);
   // Ingyo: free argv.
   free (argv);
   return success;
@@ -499,7 +501,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
 /* load() helpers. */
 
-static bool install_page (void *upage, void *kpage, bool writable);
+// bool install_page (void *upage, void *kpage, bool writable);
 
 /* Checks whether PHDR describes a valid, loadable segment in
    FILE and returns true if so, false otherwise. */
@@ -603,9 +605,6 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
           return false; 
         }
 
-      // TODO Ingyo: Test frame.h
-      add_fte_test (upage, kpage);
-
       /* Advance. */
       read_bytes -= page_read_bytes;
       zero_bytes -= page_zero_bytes;
@@ -625,14 +624,12 @@ setup_stack (void **esp, int argc, char **argv)
   uint8_t *kpage;
   bool success = false;
 
-  kpage = palloc_get_page (PAL_USER | PAL_ZERO);
-  if (kpage != NULL) 
-    {
-      success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
+//  kpage = palloc_get_page (PAL_USER | PAL_ZERO);
+//  if (kpage != NULL) 
+//    {
+      success = stack_growth (((uint8_t *) PHYS_BASE) - PGSIZE);
       *esp = PHYS_BASE;
       if (success) {
-        // TODO Ingyo: Test frame.h
-        add_fte_test (((uint8_t *) PHYS_BASE) - PGSIZE, kpage);
         // Ingyo: Push argv data to stack.
         int total_len = 0;
         char* argv_addr[argc];
@@ -665,7 +662,7 @@ setup_stack (void **esp, int argc, char **argv)
       }
       else
         palloc_free_page (kpage);
-    }
+//    }
   return success;
 }
 
@@ -678,7 +675,7 @@ setup_stack (void **esp, int argc, char **argv)
    with palloc_get_page().
    Returns true on success, false if UPAGE is already mapped or
    if memory allocation fails. */
-static bool
+bool
 install_page (void *upage, void *kpage, bool writable)
 {
   struct thread *t = thread_current ();
