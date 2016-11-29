@@ -21,7 +21,7 @@ test_main (void)
       CHECK (mmap (handle[i], actual[i]) != MAP_FAILED,
              "mmap \"sample.txt\" #%zu at %p", i, (void *) actual[i]);
     }
-
+//printf ("ac0: %s, ac1: %s, sam: %s\n", actual[0], actual[1], sample);
   for (i = 0; i < 2; i++)
     CHECK (!memcmp (actual[i], sample, strlen (sample)),
            "compare mmap'd file %zu against data", i);

@@ -108,6 +108,8 @@ struct thread
     int wait_status;
     struct semaphore exec_sema;
     struct hash spt;
+    struct list mmap_file_list;
+    int mid;
 #endif
 
     /* Owned by thread.c. */

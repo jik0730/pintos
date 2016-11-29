@@ -4,24 +4,28 @@
 #include <debug.h>
 #include "userprog/pagedir.h"
 #include <stdio.h>
+#include "vm/frame.h"
+#include "threads/synch.h"
+#include "vm/page.h"
 
 /* TODO List
-   1. Deallocating frame table entries. (where?)
-   2. Adding functionality of swapping.
-   3. Page aligned????? -> ASSERT...
 */
 
 struct fte* init_fte (const void* upage, const void* kpage);
 struct fte* find_fte (const void* upage);
 struct fte* find_victim_fte (void);
+void remove_victim (void* upage, void* kpage, struct thread* t);
+void releaes_victim (struct fte* victim, size_t idx);
 
 struct list frame_table;
+struct lock frame_lock;
 
 /* Ingyo: Init frame.h */
 void
 frame_init (void)
 {
   list_init (&frame_table);
+  lock_init (&frame_lock);
 }
 
 /* Ingyo: Add frame table entry to frame table with upage. */
@@ -30,27 +34,46 @@ add_fte (const void* upage, enum palloc_flags flag)
 {
   ASSERT ((int) upage % 4096 == 0);
 
+  lock_acquire (&frame_lock);
   void* kpage = palloc_get_page (flag);
-  // TODO: Implement swapping, otherwise kernel panic.
-  ASSERT (kpage != NULL);
 
   struct fte* fte;
   if (kpage != NULL) {
     fte = init_fte (upage, kpage);
+    lock_release (&frame_lock);
     return fte;
   } else {
-    // TODO: Swapping and find victim fte.
+    struct fte* victim = find_victim_fte ();
+    kpage = victim->kpage;
+    size_t idx = swap_out (kpage);
+    release_victim (victim, idx);
+    remove_victim (victim->upage, victim->kpage, victim->thread);
+
+    ASSERT (kpage == palloc_get_page (flag));
+    fte = init_fte (upage, kpage);
+    lock_release (&frame_lock);
+    return fte;
   }
-  return NULL;
 }
 
-/* Ingyo: Overloaded add_fte for testing. */
 void
-add_fte_test (const void* upage, const void* kpage)
+release_victim (struct fte* victim, size_t idx)
 {
-  ASSERT ((int) upage % 4096 == 0);
+  struct spte s;
+  s.upage = victim->upage;
+  struct hash_elem* e = hash_find (&victim->thread->spt, &s.elem);
+  if (e == NULL) return ;
 
-  struct fte* fte = init_fte (upage, kpage);
+  struct spte* spte = hash_entry (e, struct spte, elem);
+  ASSERT (spte != NULL);
+  ASSERT (spte->is_loaded == true);
+
+  pagedir_clear_page (spte->fte->thread->pagedir, spte->upage);
+  spte->fte = NULL;
+  spte->kpage = NULL;
+  spte->is_loaded = false;
+  spte->type = SWAP;
+  spte->idx = idx;
 }
 
 /* Ingyo: Remove frame table entry from frame table with upage. */
@@ -58,16 +81,14 @@ void
 remove_fte (const void* upage)
 {
   ASSERT ((int) upage % 4096 == 0);
-
+  lock_acquire (&frame_lock);  
   struct fte* fte = find_fte (upage);
   ASSERT (fte != NULL);
 
   palloc_free_page (fte->kpage);
-  // Clear pd entry. TODO: Do we really need this here??
-//  pagedir_clear_page (fte->thread->pagedir, upage);
-
   list_remove (&fte->elem);
   free (fte);
+  lock_release (&frame_lock);
 }
 
 /* Ingyo: Find victim fte by Enhanced Second Change Algorithm. */
@@ -84,7 +105,6 @@ find_victim_fte (void)
     if (!pagedir_is_accessed (pd, upage)
         && !pagedir_is_dirty (pd, upage))
     {
-      printf ("Is it possible????\n");
       return fte;
     }
     if (pagedir_is_accessed (pd, upage))
@@ -137,7 +157,6 @@ init_fte (const void* upage, const void* kpage)
   fte->upage = upage;
   fte->kpage = kpage;
   fte->thread = thread_current ();
-  // TODO: Do we need ordered list by somewhat??
   list_push_back (&frame_table, &fte->elem);
 
   return fte;
@@ -163,4 +182,40 @@ find_fte (const void* upage)
   return NULL;
 }
 
+void
+remove_victim (void* upage, void* kpage, struct thread* t)
+{
+  struct list_elem* e;
 
+  for (e=list_begin (&frame_table); e!=list_end (&frame_table);
+       e=list_next (e))
+  {
+    struct fte* fte = list_entry (e, struct fte, elem);
+    if (fte->thread == t && fte->upage == upage && fte->kpage == kpage) {
+      palloc_free_page (fte->kpage);
+      list_remove (&fte->elem);
+      free (fte);
+      break;
+    }
+  }
+}
+
+void
+remove_victim_public (void* upage, void* kpage, struct thread* t)
+{
+  struct list_elem* e;
+
+  lock_acquire (&frame_lock);
+  for (e=list_begin (&frame_table); e!=list_end (&frame_table);
+       e=list_next (e))
+  {
+    struct fte* fte = list_entry (e, struct fte, elem);
+    if (fte->thread == t && fte->upage == upage && fte->kpage == kpage) {
+      palloc_free_page (fte->kpage);
+      list_remove (&fte->elem);
+      free (fte);
+      break;
+    }
+  }
+  lock_release (&frame_lock);
+}

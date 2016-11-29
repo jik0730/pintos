@@ -5,6 +5,7 @@
 #include "threads/thread.h"
 #include <list.h>
 #include "threads/palloc.h"
+#include "vm/swap.h"
 
 struct fte
   {
@@ -18,6 +19,6 @@ struct fte
 void frame_init (void);
 struct fte* add_fte (const void* upage, enum palloc_flags flag);
 void remove_fte (const void* upage);
-void add_fte_test (const void* upage, const void* kpage);
+void remove_victim_public (void* upage, void* kpage, struct thread* t);
 
 #endif /* vm/frame.h */

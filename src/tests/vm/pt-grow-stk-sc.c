@@ -22,11 +22,12 @@ test_main (void)
   CHECK ((handle = open ("sample.txt")) > 1, "open \"sample.txt\"");
   CHECK (write (handle, sample, slen) == slen, "write \"sample.txt\"");
   close (handle);
-
+//printf ("@@@@%s\n", sample);
   /* Read back via read(). */
   CHECK ((handle = open ("sample.txt")) > 1, "2nd open \"sample.txt\"");
   CHECK (read (handle, buf2 + 32768, slen) == slen, "read \"sample.txt\"");
-
+//printf ("sam: %d", slen);
   CHECK (!memcmp (sample, buf2 + 32768, slen), "compare written data against read data");
+
   close (handle);
 }

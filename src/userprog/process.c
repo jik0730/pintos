@@ -46,6 +46,8 @@ struct process* process_init (void)
   process->exec_file = NULL;
   list_init (&process->files);
   spage_init (&cur->spt);
+  list_init (&cur->mmap_file_list);
+  cur->mid = 3;
   return process;
 }
 
@@ -256,6 +258,18 @@ process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
+
+  if (cur->my_process->exec_file != NULL)
+    file_close (cur->my_process->exec_file);
+
+  if (!list_empty (&cur->mmap_file_list)) {
+    for (int i=3; i<cur->mid; i++) {
+      if (find_mmap_file (i) != NULL) munmap (i);
+    }
+  }
+  if (!hash_empty (&cur->spt)) {
+    spage_destroy (&cur->spt);
+  }
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -624,45 +638,41 @@ setup_stack (void **esp, int argc, char **argv)
   uint8_t *kpage;
   bool success = false;
 
-//  kpage = palloc_get_page (PAL_USER | PAL_ZERO);
-//  if (kpage != NULL) 
-//    {
-      success = stack_growth (((uint8_t *) PHYS_BASE) - PGSIZE);
-      *esp = PHYS_BASE;
-      if (success) {
-        // Ingyo: Push argv data to stack.
-        int total_len = 0;
-        char* argv_addr[argc];
-        for (int i=argc-1; i>=0; i--) {
-          int len = strlen(argv[i]) + 1;
-          *esp = *esp - len;
-          memcpy (*esp, argv[i], len);
-          total_len += len;
-          argv_addr[i] = *esp;
-        }
-        // Ingyo: Word-align
-        *esp = *esp - 4 + (total_len) % 4;
-        // Ingyo: NULL
-        *esp -= sizeof (char*);
-        memset (*esp, 0, sizeof (char*));
-        // Ingyo: Push addresses
-        for (int i=argc-1; i>=0; i--) {
-          *esp -= sizeof (char*);
-          memcpy (*esp, &argv_addr[i], sizeof (char*));
-        }
-        // Ingyo: Push argv, argc, RA
-        char* temp = *esp;
-        *esp -= sizeof (char**);
-        memcpy (*esp, &temp, sizeof (char**));
-        *esp -= sizeof (int);
-        memcpy (*esp, &argc, sizeof (int));
-        *esp -= sizeof (void*);
-        memset (*esp, 0, sizeof (void*));
-//        hex_dump(*esp, &(**esp), 50, true);
+    success = stack_growth (((uint8_t *) PHYS_BASE) - PGSIZE);
+    *esp = PHYS_BASE;
+    if (success) {
+      // Ingyo: Push argv data to stack.
+      int total_len = 0;
+      char* argv_addr[argc];
+      for (int i=argc-1; i>=0; i--) {
+        int len = strlen(argv[i]) + 1;
+        *esp = *esp - len;
+        memcpy (*esp, argv[i], len);
+        total_len += len;
+        argv_addr[i] = *esp;
       }
-      else
-        palloc_free_page (kpage);
-//    }
+      // Ingyo: Word-align
+      *esp = *esp - 4 + (total_len) % 4;
+      // Ingyo: NULL
+      *esp -= sizeof (char*);
+      memset (*esp, 0, sizeof (char*));
+      // Ingyo: Push addresses
+      for (int i=argc-1; i>=0; i--) {
+        *esp -= sizeof (char*);
+        memcpy (*esp, &argv_addr[i], sizeof (char*));
+      }
+      // Ingyo: Push argv, argc, RA
+      char* temp = *esp;
+      *esp -= sizeof (char**);
+      memcpy (*esp, &temp, sizeof (char**));
+      *esp -= sizeof (int);
+      memcpy (*esp, &argc, sizeof (int));
+      *esp -= sizeof (void*);
+      memset (*esp, 0, sizeof (void*));
+//      hex_dump(*esp, &(**esp), 50, true);
+    }
+    else
+      palloc_free_page (kpage);
   return success;
 }
 

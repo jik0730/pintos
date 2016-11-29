@@ -13,6 +13,7 @@
 #include "userprog/process.h"
 #include "threads/malloc.h"
 #include <string.h>
+#include "vm/page.h"
 
 #define ARG_MAX 3 // Ingyo: define ARG_MAX.
 #define EXIT_SUCCESS 0 // Ingyo: define exit s/f.
@@ -25,6 +26,7 @@ void get_arguments (struct intr_frame* _f,
                     int* _args, int num_args);
 void check_ptr_valid (void* esp);
 struct process_file* find_file_by_fd (int fd);
+struct mmap_file* find_mmap_file (mapid_t mapid);
 
 static void syscall_handler (struct intr_frame *);
 void halt (void);
@@ -40,6 +42,8 @@ void close (int fd);
 unsigned tell (int fd);
 void seek (int fd, unsigned position);
 bool remove (const char* file);
+mapid_t mmap (int fd, void* addr);
+void munmap (mapid_t mapid);
 
 void
 syscall_init (void) 
@@ -141,6 +145,18 @@ syscall_handler (struct intr_frame *f UNUSED)
       f->eax = remove ((const char*)*(int*)args[0]);
       break;
     }
+    case SYS_MMAP:
+    {
+      get_arguments (f, args, 2);
+      f->eax = mmap (*(int*)args[0], (void*)*(int*)args[1]);
+      break;
+    }
+    case SYS_MUNMAP:
+    {
+      get_arguments (f, args, 1);
+      munmap ((mapid_t)*(int*)args[0]);
+      break;
+    }
     default:
     {
 //      printf ("Strange syscall!!!!");
@@ -190,8 +206,6 @@ exit (int status)
   cur->my_process->exit_status = status;
   cur->my_process->is_exit = 1;
 
-  // TODO Ingyo: Close all files corresponding fd.
-
   thread_exit ();
 }
 
@@ -206,6 +220,8 @@ wait (pid_t pid)
 int
 write (int fd, const void* buffer, unsigned size)
 {
+//  if (get_spte (pg_round_down (buffer))->type == EXEC) return -1;
+//  printf ("buffer: %X\n", buffer);
   check_ptr_valid (buffer);
   if (fd == STDOUT_FILENO)
   {
@@ -226,6 +242,8 @@ int
 read (int fd, void* buffer, unsigned size)
 {
 //  check_ptr_valid (buffer);
+// TODO: pt-grow-stk-sc test...
+//printf ("bu: %X\n, fd: %d\n", buffer, fd);
   if (buffer >= PHYS_BASE || buffer<=USER_VADDR_BOTTOM)
   {
     exit (EXIT_FAILURE);
@@ -243,6 +261,10 @@ read (int fd, void* buffer, unsigned size)
     lock_acquire (&filesys_lock);
     // Ingyo: Find file with specified fd in current thread.
     struct process_file* pf = find_file_by_fd (fd);
+    if (pf == NULL) {
+      lock_release (&filesys_lock);
+      return -1;
+    }
     int toReturn = file_read (pf->file, buffer, size);
     lock_release (&filesys_lock);
     return toReturn;
@@ -316,14 +338,13 @@ void
 close (int fd)
 {
   lock_acquire (&filesys_lock);
-  // TODO Ingyo: find file with fd in current thread or process.
+
   struct process_file* pf = find_file_by_fd (fd);
   if (pf == NULL) {
     lock_release (&filesys_lock);
     return ;//printf ("Something went wrong in close.\n");
   }
 
-  // TODO Ingyo: remove file_elem from a thread. Use file_close() function.
   file_close (pf->file);
   process_file_remove (pf);
   lock_release (&filesys_lock);
@@ -372,6 +393,87 @@ remove (const char* file)
   return success;
 }
 
+/* Ingyo: Implement mmap. */
+mapid_t
+mmap (int fd, void* addr)
+{
+  lock_acquire (&filesys_lock);
+  struct process_file* pf = find_file_by_fd (fd);
+
+  if (fd == 0 || fd == 1 || file_length (pf->file) == 0 || (int) addr == 0 ||
+      (int) addr % 4096 != 0) {
+    lock_release (&filesys_lock);
+    return -1;
+  }
+  ASSERT (pf != NULL);
+
+  struct file* f = file_reopen (pf->file);
+  uint32_t read_bytes = file_length (f);
+  uint32_t zero_bytes = (read_bytes % 4096 == 0) ? 0 :
+                        ((((int) read_bytes/4096) + 1)*4096) - read_bytes;
+  if (!lazy_load_segment_mmfile (f, 0, addr, read_bytes, zero_bytes, true)) {
+    lock_release (&filesys_lock);
+    return -1;
+  }
+
+  struct thread* cur = thread_current ();
+  struct mmap_file* mf = malloc (sizeof (struct mmap_file));
+  mf->mid = cur->mid++;
+  mf->upage = addr;
+  mf->file = f;
+  list_push_back (&cur->mmap_file_list, &mf->elem);
+  lock_release (&filesys_lock);
+  return mf->mid;
+}
+
+/* Ingyo: Implement munmap. */
+void
+munmap (mapid_t mapid)
+{
+  struct mmap_file* mf = find_mmap_file (mapid);
+  ASSERT (mf != NULL);
+  if (!munmap_sptes (mf))
+    ASSERT (0);
+  list_remove (&mf->elem);
+  free (mf);
+}
+
+/* Ingyo: find mmap_file from current thread. */
+struct mmap_file*
+find_mmap_file (mapid_t mapid)
+{
+  struct thread* cur = thread_current ();
+  struct list* mmap_file_list = &(cur->mmap_file_list);
+  struct list_elem* e;
+  struct mmap_file* mf;
+
+  for (e = list_begin (mmap_file_list); e != list_end (mmap_file_list);
+       e = list_next (e))
+  {
+    mf = list_entry (e, struct mmap_file, elem);
+
+    if (mf->mid == mapid)
+      return mf;
+  }
+  return NULL; 
+}
+
+/* Ingyo: destroy all entry of mmap_file_list. */
+void
+mmap_file_list_destroy (struct list* mfl)
+{
+  struct list_elem* e;
+  struct mmap_file* mf;
+
+  for (e = list_begin (mfl); e != list_end (mfl);
+       e = list_next (e))
+  {
+    mf = list_entry (e, struct mmap_file, elem);
+    munmap (mf->mid);
+  }
+
+  ASSERT (list_empty (mfl));
+}
 
 /* Ingyo: Retrieve arguments from syscalls.
           Store address of args into _args. */
@@ -420,8 +522,7 @@ find_file_by_fd (int fd)
   {
     pf = list_entry (e, struct process_file, file_elem);
 
-    // TODO Ingyo: why deny_write condition????
-    if (pf->fd == fd)// && !pf->file->deny_write)
+    if (pf->fd == fd)
       return pf;
   }
   return NULL; 

@@ -172,26 +172,25 @@ page_fault (struct intr_frame *f)
   void* fault_page = pg_round_down (fault_addr);
   struct spte* spte = get_spte (fault_page);
 
-//printf ("fault_addr: %X, fault_page: %X\n", fault_addr, fault_page);
-
   if (!spte)
   {
     if (fault_page<PHYS_BASE && fault_page>=USER_VADDR_BOTTOM)
     {
       if (fault_addr > f->esp - 4096)
         success = stack_growth (fault_page);
+      // TODO: Hard coding................
+      // If user == 0, we should have stored user's esp for kernel.
+      else if (user == 0 && (int) f->esp != 0) success = stack_growth (fault_page);
       else exit (-1);
     }
     else
     {
-      // TODO: Process Termination.
       exit (-1);
     }
   }
   else
   {
     success = load_page (spte);
-//printf ("load success??: %d\n", success);
   }
 
   /* To implement virtual memory, delete the rest of the function
@@ -199,7 +198,7 @@ page_fault (struct intr_frame *f)
      which fault_addr refers. */
   if (!success)
   {
-//    exit (-1);
+    exit (-1);
     printf ("Page fault at %p: %s error %s page in %s context.\n",
             fault_addr,
             not_present ? "not present" : "rights violation",
